@@ -181,9 +181,42 @@ void buildInflatedObstacles()
     map_data_.inflated_map.assign(w * h, 0);
 
     // 1. Iterate through the occupancy grid
-
-    // 2. Expand obstacles using a square region
-
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            int idx = y * w + x;
+            
+            // If this cell is an obstacle (occupied)
+            if (map_data_.map.data[idx] > 50)
+            {
+                // Mark the cell itself as an obstacle
+                map_data_.inflated_map[idx] = 100;
+                
+                // 2. Expand obstacles using a square region
+                for (int dy = -inflate_cells; dy <= inflate_cells; dy++)
+                {
+                    for (int dx = -inflate_cells; dx <= inflate_cells; dx++)
+                    {
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        
+                        // Check if the neighboring cell is within map bounds
+                        if (nx >= 0 && nx < w && ny >= 0 && ny < h)
+                        {
+                            int nidx = ny * w + nx;
+                            map_data_.inflated_map[nidx] = 100; // Mark as obstacle
+                        }
+                    }
+                }
+            }
+            else if (map_data_.map.data[idx] >= 0)
+            {
+                // Copy known free space
+                map_data_.inflated_map[idx] = std::max(map_data_.inflated_map[idx], static_cast<int>(map_data_.map.data[idx]));
+            }
+        }
+    }
 }
 
 void markReachableCells(int sx, int sy, std::vector<bool> &reachable)
@@ -245,10 +278,54 @@ void detectFrontiers(const std::vector<bool> &reachable, std::vector<std::pair<i
     const auto &inflated_map = map_data_.inflated_map;
 
     auto indexOf = [&](int x, int y) { return y * w + x; };
-    //TODO:
-    //Traverse each point in the map
-    //Check if there are unknown areas in the neighboring regions
-   
+    
+    // Traverse each point in the map
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            int idx = indexOf(x, y);
+            
+            // Skip if cell is not reachable or is an obstacle
+            if (!reachable[idx] || inflated_map[idx] > 0)
+                continue;
+                
+            // Skip if cell is unknown
+            if (grid[idx] < 0)
+                continue;
+                
+            // Check if there are unknown areas in the neighboring regions
+            bool is_frontier = false;
+            
+            // Check 8-connected neighbors
+            static const int dx[8] = {1, 1, 0, -1, -1, -1, 0, 1};
+            static const int dy[8] = {0, 1, 1, 1, 0, -1, -1, -1};
+            
+            for (int i = 0; i < 8; i++)
+            {
+                int nx = x + dx[i];
+                int ny = y + dy[i];
+                
+                // Check if neighbor is within map bounds
+                if (nx < 0 || nx >= w || ny < 0 || ny >= h)
+                    continue;
+                    
+                int nidx = indexOf(nx, ny);
+                
+                // If neighbor is unknown, this cell is a frontier
+                if (grid[nidx] < 0)
+                {
+                    is_frontier = true;
+                    break;
+                }
+            }
+            
+            if (is_frontier)
+            {
+                frontiers.emplace_back(x, y);
+            }
+        }
+    }
 }
 
 // cluster frontiers
@@ -278,9 +355,61 @@ void clusterFrontiers(const std::vector<std::pair<int, int>> &frontier_cells, st
     static const int NX[8] = {1, 1, 0, -1, -1, -1, 0, 1};
     static const int NY[8] = {0, 1, 1, 1, 0, -1, -1, -1};
     std::vector<bool> clustered(w * h, false);
-    // TODO:
-    // cluster
-
+    
+    // Traverse each frontier
+    for (const auto &f : frontier_cells)
+    {
+        int x = f.first;
+        int y = f.second;
+        int idx = toIndex(x, y);
+        
+        // Skip if already clustered
+        if (clustered[idx])
+            continue;
+            
+        // Create a new cluster
+        std::vector<std::pair<int, int>> current_cluster;
+        
+        // Create a queue, add the current frontier point to the queue, and mark it as clustered
+        std::queue<std::pair<int, int>> Q;
+        Q.push(f);
+        clustered[idx] = true;
+        
+        // BFS to find connected frontier points
+        while (!Q.empty())
+        {
+            // Remove a point from the queue and add it to the current cluster
+            auto current = Q.front();
+            Q.pop();
+            current_cluster.push_back(current);
+            
+            // Check neighbors
+            for (int i = 0; i < 8; i++)
+            {
+                int nx = current.first + NX[i];
+                int ny = current.second + NY[i];
+                
+                // Check if neighbor is within map bounds
+                if (nx < 0 || nx >= w || ny < 0 || ny >= h)
+                    continue;
+                    
+                int nidx = toIndex(nx, ny);
+                
+                // If a neighbor is an unclustered frontier point and is reachable, add it to the queue
+                if (visited[nidx] && !clustered[nidx])
+                {
+                    clustered[nidx] = true;
+                    Q.push(std::make_pair(nx, ny));
+                }
+            }
+        }
+        
+        // Add the cluster if it's not empty
+        if (!current_cluster.empty())
+        {
+            clusters.push_back(current_cluster);
+        }
+    }
 }
 
 /*
@@ -292,7 +421,23 @@ TODO:
 */
 int selectLargestCluster(const std::vector<std::vector<std::pair<int, int>>> &clusters)
 {
-
+    // 1. Initialize tracking variables
+    int largest_idx = 0;
+    size_t largest_size = 0;
+    
+    // 2. Iterate through all clusters
+    for (size_t i = 0; i < clusters.size(); i++)
+    {
+        // 3. Compare cluster sizes
+        if (clusters[i].size() > largest_size)
+        {
+            largest_size = clusters[i].size();
+            largest_idx = i;
+        }
+    }
+    
+    // 4. Return the index of the largest cluster
+    return largest_idx;
 }
 
 bool getRobotPoseInMapFrame(double &x, double &y)
@@ -353,4 +498,3 @@ int main(int argc, char **argv)
     ros::spin();
     return 0;
 }
-
