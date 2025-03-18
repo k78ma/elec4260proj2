@@ -98,7 +98,12 @@ void odomCallback(const nav_msgs::Odometry::ConstPtr &odom_msg)
     }
 
     // 4. get the error
-    // TODO:
+    // Calculate distance error (cross-track error)
+    double dist_error = dist_to_waypoint;
+    
+    // Calculate heading error
+    double target_heading = std::atan2(ty - ry, tx - rx);
+    double heading_error = normalizeAngle(target_heading - ryaw);
 
     // 5. PID control
     double linear_cmd = pidComputeDist(dist_error);
@@ -115,20 +120,52 @@ void odomCallback(const nav_msgs::Odometry::ConstPtr &odom_msg)
         angular_cmd = -max_angular_speed_;
 
     // 7. pub cmd
-    //TODO:
-
+    geometry_msgs::Twist cmd_vel;
+    cmd_vel.linear.x = linear_cmd;
+    cmd_vel.angular.z = angular_cmd;
+    cmd_pub_.publish(cmd_vel);
 }
 
 // TODO: PID distance control
 double pidComputeDist(double error)
 {
-
+    // Proportional term
+    double p_term = kp_dist_ * error;
+    
+    // Integral term
+    integrated_dist_error_ += error;
+    double i_term = ki_dist_ * integrated_dist_error_;
+    
+    // Derivative term
+    double derivative = error - last_dist_error_;
+    double d_term = kd_dist_ * derivative;
+    
+    // Update last error
+    last_dist_error_ = error;
+    
+    // Return PID output
+    return p_term + i_term + d_term;
 }
 
 // TODO: PID Heading control
 double pidComputeHeading(double error)
 {
-
+    // Proportional term
+    double p_term = kp_heading_ * error;
+    
+    // Integral term
+    integrated_heading_error_ += error;
+    double i_term = ki_heading_ * integrated_heading_error_;
+    
+    // Derivative term
+    double derivative = error - last_heading_error_;
+    double d_term = kd_heading_ * derivative;
+    
+    // Update last error
+    last_heading_error_ = error;
+    
+    // Return PID output
+    return p_term + i_term + d_term;
 }
 
 // stop robot
@@ -164,17 +201,12 @@ int main(int argc, char** argv)
     ros::NodeHandle nh, private_nh;
 
     // load PID param
-    /*
-    TODO: you have to uncomment the params and replace the PID param * by your own 
-
-    // private_nh.param("kp_heading", kp_heading_, *);
-    // private_nh.param("ki_heading", ki_heading_, *);
-    // private_nh.param("kd_heading", kd_heading_, *);
-    // private_nh.param("kp_dist", kp_dist_, *);
-    // private_nh.param("ki_dist", ki_dist_, *);
-    // private_nh.param("kd_dist", kd_dist_, *);
-
-    */
+    private_nh.param("kp_heading", kp_heading_, 1.0);
+    private_nh.param("ki_heading", ki_heading_, 0.01);
+    private_nh.param("kd_heading", kd_heading_, 0.1);
+    private_nh.param("kp_dist", kp_dist_, 0.5);
+    private_nh.param("ki_dist", ki_dist_, 0.01);
+    private_nh.param("kd_dist", kd_dist_, 0.1);
 
     private_nh.param("max_linear_speed", max_linear_speed_, 0.1);
     private_nh.param("max_angular_speed", max_angular_speed_, 0.22);
