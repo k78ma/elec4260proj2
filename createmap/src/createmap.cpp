@@ -16,6 +16,8 @@ const int MAP_SIZE_X = 400;
 const int MAP_SIZE_Y = 400;
 const int SCAN_THRESHOLD = 8;
 const int DECAY_FACTOR = 0;
+const double SUSPICIOUS_ANGLE_THRESHOLD = 70.0 * M_PI / 180.0;  // 70 degrees in radians
+const int OBSTACLE_CONFIDENCE_THRESHOLD = 2;  // Minimum number of obstacles in vicinity to verify an obstacle
 
 // Record the number of times the grid is scanned by the laser
 std::vector<std::vector<int>> scan_count(MAP_SIZE_X, std::vector<int>(MAP_SIZE_Y, 0));
@@ -90,6 +92,52 @@ std::pair<int, int> worldToGrid(double x, double y)
     return {gx, gy};
 }
 
+// Add this function that checks if a point is near confirmed obstacles
+bool isNearObstacles(int x, int y, int radius) {
+    int obstacle_count = 0;
+    for (int dx = -radius; dx <= radius; ++dx) {
+        for (int dy = -radius; dy <= radius; ++dy) {
+            int nx = x + dx;
+            int ny = y + dy;
+            if (nx >= 0 && nx < MAP_SIZE_X && ny >= 0 && ny < MAP_SIZE_Y) {
+                if (confirmed_obstacles[nx][ny]) {
+                    obstacle_count++;
+                    if (obstacle_count >= OBSTACLE_CONFIDENCE_THRESHOLD) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+// Add this function to check if a ray is suspicious (has a sharp angle to neighboring rays)
+bool isSuspiciousRay(const sensor_msgs::LaserScan::ConstPtr& scan, size_t index) {
+    // If we're at the edges of the scan, don't consider it suspicious
+    if (index <= 1 || index >= scan->ranges.size() - 2) {
+        return false;
+    }
+    
+    // Check if this ray has a significantly different range than its neighbors
+    double range = scan->ranges[index];
+    double prev_range = scan->ranges[index-1];
+    double next_range = scan->ranges[index+1];
+    
+    // If any neighbors are invalid, can't make a good judgment
+    if (std::isnan(prev_range) || std::isnan(next_range)) {
+        return false;
+    }
+    
+    // Calculate angle between rays
+    double angle_diff_prev = std::abs(std::atan2(range - prev_range, scan->angle_increment));
+    double angle_diff_next = std::abs(std::atan2(range - next_range, scan->angle_increment));
+    
+    // If the angle is too sharp, consider it suspicious
+    return (angle_diff_prev > SUSPICIOUS_ANGLE_THRESHOLD || 
+            angle_diff_next > SUSPICIOUS_ANGLE_THRESHOLD);
+}
+
 void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan) 
 {
     ros::Time scan_time = scan->header.stamp;
@@ -129,6 +177,11 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
             {
                 continue;
             }
+            
+            // Skip suspicious rays (rays with sharp angles compared to neighbors)
+            if (isSuspiciousRay(scan, i)) {
+                continue;
+            }
 
             //map coordinates
             // Calculate laser endpoint in laser frame
@@ -160,7 +213,8 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
             bool ray_passes_through_obstacle = false;
             for (size_t j = 0; j < line_points.size() - 1; ++j) {
                 auto [x, y] = line_points[j];
-                if (confirmed_obstacles[x][y]) {
+                // Check for direct obstacles and nearby obstacles
+                if (confirmed_obstacles[x][y] || isNearObstacles(x, y, 1)) {
                     ray_passes_through_obstacle = true;
                     break;
                 }
@@ -198,23 +252,36 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
     }
 }
 
-// New function to thicken walls
+// Modify the thickenWalls function to be directional
 void thickenWalls(std::vector<std::vector<bool>>& obstacles, int thickness = 1) {
     std::vector<std::vector<bool>> temp = obstacles;
     
+    // First pass: horizontal walls (more common in structured environments)
     for (int x = 0; x < MAP_SIZE_X; ++x) {
         for (int y = 0; y < MAP_SIZE_Y; ++y) {
             if (obstacles[x][y]) {
-                // For each obstacle cell, mark surrounding cells within thickness as obstacles
-                for (int dx = -thickness; dx <= thickness; ++dx) {
-                    for (int dy = -thickness; dy <= thickness; ++dy) {
-                        int nx = x + dx;
-                        int ny = y + dy;
-                        
-                        // Check bounds
-                        if (nx >= 0 && nx < MAP_SIZE_X && ny >= 0 && ny < MAP_SIZE_Y) {
-                            temp[nx][ny] = true;
-                        }
+                // Check for horizontal wall pattern
+                bool is_horizontal = false;
+                if (x > 0 && x < MAP_SIZE_X-1) {
+                    is_horizontal = obstacles[x-1][y] || obstacles[x+1][y];
+                }
+                
+                // Apply stronger horizontal thickening
+                int h_thickness = is_horizontal ? thickness + 1 : thickness;
+                
+                // Apply horizontal thickening
+                for (int dx = -h_thickness; dx <= h_thickness; ++dx) {
+                    int nx = x + dx;
+                    if (nx >= 0 && nx < MAP_SIZE_X) {
+                        temp[nx][y] = true;
+                    }
+                }
+                
+                // Apply vertical thickening
+                for (int dy = -thickness; dy <= thickness; ++dy) {
+                    int ny = y + dy;
+                    if (ny >= 0 && ny < MAP_SIZE_Y) {
+                        temp[x][ny] = true;
                     }
                 }
             }
