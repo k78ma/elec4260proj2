@@ -14,8 +14,8 @@
 const double GRID_RESOLUTION = 0.02;
 const int MAP_SIZE_X = 400;
 const int MAP_SIZE_Y = 400;
-const int SCAN_THRESHOLD = 5;
-const int DECAY_FACTOR = 1;
+const int SCAN_THRESHOLD = 8;
+const int DECAY_FACTOR = 0;
 
 // Record the number of times the grid is scanned by the laser
 std::vector<std::vector<int>> scan_count(MAP_SIZE_X, std::vector<int>(MAP_SIZE_Y, 0));
@@ -185,11 +185,45 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
     }
 }
 
-// TODO: map -> odom
+// New function to thicken walls
+void thickenWalls(std::vector<std::vector<bool>>& obstacles, int thickness = 1) {
+    std::vector<std::vector<bool>> temp = obstacles;
+    
+    for (int x = 0; x < MAP_SIZE_X; ++x) {
+        for (int y = 0; y < MAP_SIZE_Y; ++y) {
+            if (obstacles[x][y]) {
+                // For each obstacle cell, mark surrounding cells within thickness as obstacles
+                for (int dx = -thickness; dx <= thickness; ++dx) {
+                    for (int dy = -thickness; dy <= thickness; ++dy) {
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        
+                        // Check bounds
+                        if (nx >= 0 && nx < MAP_SIZE_X && ny >= 0 && ny < MAP_SIZE_Y) {
+                            temp[nx][ny] = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    obstacles = temp;
+}
+
 void publishMap(const ros::TimerEvent& event) 
 {
     ros::Time current_time = ros::Time::now();
     broadcastMapFrame(current_time);
+
+    // Create temporary copy of confirmed_obstacles for wall thickening
+    auto thickened_obstacles = confirmed_obstacles;
+    
+    // Apply wall thickening to close small gaps (adjust thickness as needed)
+    int wall_thickness = 1;
+    ros::NodeHandle nh;
+    nh.param<int>("wall_thickness", wall_thickness, 1);
+    thickenWalls(thickened_obstacles, wall_thickness);
 
     // Create and fill the occupancy grid message
     nav_msgs::OccupancyGrid map;
@@ -204,14 +238,14 @@ void publishMap(const ros::TimerEvent& event)
     map.info.origin.position.z = 0.0;
     map.info.origin.orientation.w = 1.0;
 
-    // Fill the map data
+    // Fill the map data using thickened obstacles
     map.data.resize(MAP_SIZE_X * MAP_SIZE_Y);
     for (int y = 0; y < MAP_SIZE_Y; ++y) {
         for (int x = 0; x < MAP_SIZE_X; ++x) {
             int index = x + y * MAP_SIZE_X;
             if (!visited[x][y]) {
                 map.data[index] = -1;  // Unknown
-            } else if (confirmed_obstacles[x][y]) {
+            } else if (thickened_obstacles[x][y]) {
                 map.data[index] = 100;  // Occupied
             } else {
                 map.data[index] = 0;    // Free
