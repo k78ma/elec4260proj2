@@ -16,6 +16,8 @@ const int MAP_SIZE_X = 400;
 const int MAP_SIZE_Y = 400;
 const int SCAN_THRESHOLD = 8;
 const int DECAY_FACTOR = 0;
+// const bool ENABLE_RAY_FILTERING = true;  // Filter out rays that pass through obstacles
+const int DEFAULT_WALL_THICKNESS = 1;    // Default wall thickness for thickening
 
 // Record the number of times the grid is scanned by the laser
 std::vector<std::vector<int>> scan_count(MAP_SIZE_X, std::vector<int>(MAP_SIZE_Y, 0));
@@ -156,9 +158,22 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
             // Get all points along the laser beam
             auto line_points = bresenhamLine(start_x, start_y, end_x, end_y);
 
-            // For loop to check the status of grid
-            // scan_count, confirmed_obstacles, visited
+            // Check if ray passes through any confirmed obstacle
+            bool ray_passes_through_obstacle = false;
+            for (size_t j = 0; j < line_points.size() - 1; ++j) {
+                auto [x, y] = line_points[j];
+                if (confirmed_obstacles[x][y]) {
+                    ray_passes_through_obstacle = true;
+                    break;
+                }
+            }
 
+            // Skip this ray if it passes through a confirmed obstacle
+            if (ray_passes_through_obstacle) {
+                continue;
+            }
+
+            // Process valid rays as before
             for (size_t j = 0; j < line_points.size(); ++j) {
                 auto [x, y] = line_points[j];
                 
