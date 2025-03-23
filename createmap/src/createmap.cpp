@@ -16,8 +16,6 @@ const int MAP_SIZE_X = 400;
 const int MAP_SIZE_Y = 400;
 const int SCAN_THRESHOLD = 8;
 const int DECAY_FACTOR = 0;
-// const bool ENABLE_RAY_FILTERING = true;  // Filter out rays that pass through obstacles
-// const int DEFAULT_WALL_THICKNESS = 1;    // Default wall thickness for thickening
 
 // Record the number of times the grid is scanned by the laser
 std::vector<std::vector<int>> scan_count(MAP_SIZE_X, std::vector<int>(MAP_SIZE_Y, 0));
@@ -200,31 +198,31 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
     }
 }
 
-// // New function to thicken walls
-// void thickenWalls(std::vector<std::vector<bool>>& obstacles, int thickness = 1) {
-//     std::vector<std::vector<bool>> temp = obstacles;
+// New function to thicken walls
+void thickenWalls(std::vector<std::vector<bool>>& obstacles, int thickness = 1) {
+    std::vector<std::vector<bool>> temp = obstacles;
     
-//     for (int x = 0; x < MAP_SIZE_X; ++x) {
-//         for (int y = 0; y < MAP_SIZE_Y; ++y) {
-//             if (obstacles[x][y]) {
-//                 // For each obstacle cell, mark surrounding cells within thickness as obstacles
-//                 for (int dx = -thickness; dx <= thickness; ++dx) {
-//                     for (int dy = -thickness; dy <= thickness; ++dy) {
-//                         int nx = x + dx;
-//                         int ny = y + dy;
+    for (int x = 0; x < MAP_SIZE_X; ++x) {
+        for (int y = 0; y < MAP_SIZE_Y; ++y) {
+            if (obstacles[x][y]) {
+                // For each obstacle cell, mark surrounding cells within thickness as obstacles
+                for (int dx = -thickness; dx <= thickness; ++dx) {
+                    for (int dy = -thickness; dy <= thickness; ++dy) {
+                        int nx = x + dx;
+                        int ny = y + dy;
                         
-//                         // Check bounds
-//                         if (nx >= 0 && nx < MAP_SIZE_X && ny >= 0 && ny < MAP_SIZE_Y) {
-//                             temp[nx][ny] = true;
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
+                        // Check bounds
+                        if (nx >= 0 && nx < MAP_SIZE_X && ny >= 0 && ny < MAP_SIZE_Y) {
+                            temp[nx][ny] = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
     
-//     obstacles = temp;
-// }
+    obstacles = temp;
+}
 
 void publishMap(const ros::TimerEvent& event) 
 {
@@ -232,13 +230,13 @@ void publishMap(const ros::TimerEvent& event)
     broadcastMapFrame(current_time);
 
     // Create temporary copy of confirmed_obstacles for wall thickening
-    // auto thickened_obstacles = confirmed_obstacles;
+    auto thickened_obstacles = confirmed_obstacles;
     
     // Apply wall thickening to close small gaps (adjust thickness as needed)
     int wall_thickness = 1;
     ros::NodeHandle nh;
     nh.param<int>("wall_thickness", wall_thickness, 1);
-    // thickenWalls(thickened_obstacles, wall_thickness);
+    thickenWalls(thickened_obstacles, wall_thickness);
 
     // Create and fill the occupancy grid message
     nav_msgs::OccupancyGrid map;
@@ -260,7 +258,7 @@ void publishMap(const ros::TimerEvent& event)
             int index = x + y * MAP_SIZE_X;
             if (!visited[x][y]) {
                 map.data[index] = -1;  // Unknown
-            } else if (confirmed_obstacles[x][y]) {
+            } else if (thickened_obstacles[x][y]) {
                 map.data[index] = 100;  // Occupied
             } else {
                 map.data[index] = 0;    // Free
