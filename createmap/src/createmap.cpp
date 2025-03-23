@@ -16,8 +16,8 @@ const int MAP_SIZE_X = 400;
 const int MAP_SIZE_Y = 400;
 const int SCAN_THRESHOLD = 8;
 const int DECAY_FACTOR = 0;
-const double SUSPICIOUS_ANGLE_THRESHOLD = 70.0 * M_PI / 180.0;  // 70 degrees in radians
-const int OBSTACLE_CONFIDENCE_THRESHOLD = 2;  // Minimum number of obstacles in vicinity to verify an obstacle
+const double SUSPICIOUS_ANGLE_THRESHOLD = 85.0 * M_PI / 180.0;  // Increased to 85 degrees (less strict)
+const int OBSTACLE_CONFIDENCE_THRESHOLD = 3;  // Increased to require more obstacles nearby
 
 // Record the number of times the grid is scanned by the laser
 std::vector<std::vector<int>> scan_count(MAP_SIZE_X, std::vector<int>(MAP_SIZE_Y, 0));
@@ -92,50 +92,58 @@ std::pair<int, int> worldToGrid(double x, double y)
     return {gx, gy};
 }
 
-// Add this function that checks if a point is near confirmed obstacles
+// Modify isNearObstacles to be more selective
 bool isNearObstacles(int x, int y, int radius) {
+    // Only check along the line of sight, not in all directions
     int obstacle_count = 0;
-    for (int dx = -radius; dx <= radius; ++dx) {
-        for (int dy = -radius; dy <= radius; ++dy) {
-            int nx = x + dx;
-            int ny = y + dy;
-            if (nx >= 0 && nx < MAP_SIZE_X && ny >= 0 && ny < MAP_SIZE_Y) {
-                if (confirmed_obstacles[nx][ny]) {
-                    obstacle_count++;
-                    if (obstacle_count >= OBSTACLE_CONFIDENCE_THRESHOLD) {
-                        return true;
-                    }
-                }
+    
+    // Check along horizontal and vertical lines (more efficient and less aggressive)
+    for (int i = -radius; i <= radius; ++i) {
+        // Check horizontal line
+        if (x+i >= 0 && x+i < MAP_SIZE_X && y >= 0 && y < MAP_SIZE_Y) {
+            if (confirmed_obstacles[x+i][y]) {
+                obstacle_count++;
+            }
+        }
+        
+        // Check vertical line
+        if (x >= 0 && x < MAP_SIZE_X && y+i >= 0 && y+i < MAP_SIZE_Y) {
+            if (confirmed_obstacles[x][y+i]) {
+                obstacle_count++;
             }
         }
     }
-    return false;
+    
+    return obstacle_count >= OBSTACLE_CONFIDENCE_THRESHOLD;
 }
 
-// Add this function to check if a ray is suspicious (has a sharp angle to neighboring rays)
+// Modify isSuspiciousRay to be less aggressive
 bool isSuspiciousRay(const sensor_msgs::LaserScan::ConstPtr& scan, size_t index) {
     // If we're at the edges of the scan, don't consider it suspicious
-    if (index <= 1 || index >= scan->ranges.size() - 2) {
+    if (index <= 2 || index >= scan->ranges.size() - 3) {
         return false;
     }
     
-    // Check if this ray has a significantly different range than its neighbors
     double range = scan->ranges[index];
+    
+    // Check a wider window (two neighbors on each side)
+    double prev_range2 = scan->ranges[index-2];
     double prev_range = scan->ranges[index-1];
     double next_range = scan->ranges[index+1];
+    double next_range2 = scan->ranges[index+2];
     
-    // If any neighbors are invalid, can't make a good judgment
-    if (std::isnan(prev_range) || std::isnan(next_range)) {
+    // If all neighbors are invalid, can't make a good judgment
+    if (std::isnan(prev_range) || std::isnan(next_range) || 
+        std::isnan(prev_range2) || std::isnan(next_range2)) {
         return false;
     }
     
-    // Calculate angle between rays
-    double angle_diff_prev = std::abs(std::atan2(range - prev_range, scan->angle_increment));
-    double angle_diff_next = std::abs(std::atan2(range - next_range, scan->angle_increment));
+    // Only consider a ray suspicious if it's significantly different from multiple neighbors
+    double avg_neighbor_range = (prev_range + next_range + prev_range2 + next_range2) / 4.0;
+    double range_diff = std::abs(range - avg_neighbor_range);
     
-    // If the angle is too sharp, consider it suspicious
-    return (angle_diff_prev > SUSPICIOUS_ANGLE_THRESHOLD || 
-            angle_diff_next > SUSPICIOUS_ANGLE_THRESHOLD);
+    // Only filter rays that are significantly longer than neighbors (passing through gaps)
+    return (range > avg_neighbor_range * 1.5 && range_diff > 0.5);
 }
 
 void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan) 
@@ -213,8 +221,15 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
             bool ray_passes_through_obstacle = false;
             for (size_t j = 0; j < line_points.size() - 1; ++j) {
                 auto [x, y] = line_points[j];
-                // Check for direct obstacles and nearby obstacles
-                if (confirmed_obstacles[x][y] || isNearObstacles(x, y, 1)) {
+                
+                // Calculate distance from start point (robot position)
+                int dx = x - start_x;
+                int dy = y - start_y;
+                double dist_from_start = std::sqrt(dx*dx + dy*dy);
+                
+                // Only apply near-obstacle check if not too close to robot
+                if (confirmed_obstacles[x][y] || 
+                    (dist_from_start > 10 && isNearObstacles(x, y, 1))) {
                     ray_passes_through_obstacle = true;
                     break;
                 }
@@ -252,36 +267,27 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
     }
 }
 
-// Modify the thickenWalls function to be directional
+// Modify thickenWalls to be less aggressive
 void thickenWalls(std::vector<std::vector<bool>>& obstacles, int thickness = 1) {
+    // For thinner walls, use smaller thickness
+    thickness = std::max(1, thickness);
+    
     std::vector<std::vector<bool>> temp = obstacles;
     
-    // First pass: horizontal walls (more common in structured environments)
     for (int x = 0; x < MAP_SIZE_X; ++x) {
         for (int y = 0; y < MAP_SIZE_Y; ++y) {
             if (obstacles[x][y]) {
-                // Check for horizontal wall pattern
-                bool is_horizontal = false;
-                if (x > 0 && x < MAP_SIZE_X-1) {
-                    is_horizontal = obstacles[x-1][y] || obstacles[x+1][y];
-                }
-                
-                // Apply stronger horizontal thickening
-                int h_thickness = is_horizontal ? thickness + 1 : thickness;
-                
-                // Apply horizontal thickening
-                for (int dx = -h_thickness; dx <= h_thickness; ++dx) {
-                    int nx = x + dx;
-                    if (nx >= 0 && nx < MAP_SIZE_X) {
-                        temp[nx][y] = true;
-                    }
-                }
-                
-                // Apply vertical thickening
-                for (int dy = -thickness; dy <= thickness; ++dy) {
-                    int ny = y + dy;
-                    if (ny >= 0 && ny < MAP_SIZE_Y) {
-                        temp[x][ny] = true;
+                // Use a smaller thickening radius
+                for (int dx = -thickness; dx <= thickness; ++dx) {
+                    for (int dy = -thickness; dy <= thickness; ++dy) {
+                        // Apply thickening only if it's close to the obstacle
+                        if (dx*dx + dy*dy <= thickness*thickness) {
+                            int nx = x + dx;
+                            int ny = y + dy;
+                            if (nx >= 0 && nx < MAP_SIZE_X && ny >= 0 && ny < MAP_SIZE_Y) {
+                                temp[nx][ny] = true;
+                            }
+                        }
                     }
                 }
             }
