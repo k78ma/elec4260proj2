@@ -17,7 +17,7 @@ const int MAP_SIZE_Y = 400;
 const int SCAN_THRESHOLD = 8;
 const int DECAY_FACTOR = 0;
 const double SUSPICIOUS_ANGLE_THRESHOLD = 85.0 * M_PI / 180.0;  // Increased to 85 degrees (less strict)
-const int OBSTACLE_CONFIDENCE_THRESHOLD = 3;  // Increased to require more obstacles nearby
+const int OBSTACLE_CONFIDENCE_THRESHOLD = 2;  // Increased to require more obstacles nearby
 
 // Record the number of times the grid is scanned by the laser
 std::vector<std::vector<int>> scan_count(MAP_SIZE_X, std::vector<int>(MAP_SIZE_Y, 0));
@@ -143,7 +143,7 @@ bool isSuspiciousRay(const sensor_msgs::LaserScan::ConstPtr& scan, size_t index)
     double range_diff = std::abs(range - avg_neighbor_range);
     
     // Only filter rays that are significantly longer than neighbors (passing through gaps)
-    return (range > avg_neighbor_range * 1.5 && range_diff > 0.5);
+    return (range > avg_neighbor_range * 2.0 && range_diff > 0.8);
 }
 
 void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan) 
@@ -229,7 +229,7 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
                 
                 // Only apply near-obstacle check if not too close to robot
                 if (confirmed_obstacles[x][y] || 
-                    (dist_from_start > 10 && isNearObstacles(x, y, 1))) {
+                    (dist_from_start > 20 && isNearObstacles(x, y, 1))) {
                     ray_passes_through_obstacle = true;
                     break;
                 }

@@ -201,7 +201,7 @@ int main(int argc, char** argv)
     ros::NodeHandle nh, private_nh;
 
     // load PID param
-    private_nh.param("kp_heading", kp_heading_, 1.5);
+    private_nh.param("kp_heading", kp_heading_, 1.5); // 4.0 for real-world
     private_nh.param("ki_heading", ki_heading_, 0.01);
     private_nh.param("kd_heading", kd_heading_, 0.3);
     private_nh.param("kp_dist", kp_dist_, 0.5);
@@ -209,7 +209,7 @@ int main(int argc, char** argv)
     private_nh.param("kd_dist", kd_dist_, 0.1);
 
     private_nh.param("max_linear_speed", max_linear_speed_, 0.1);
-    private_nh.param("max_angular_speed", max_angular_speed_, 0.8);
+    private_nh.param("max_angular_speed", max_angular_speed_, 0.8); // 1.4 for real world
     private_nh.param("goal_tolerance", goal_tolerance_, 0.2);
 
     ros::Subscriber path_sub = nh.subscribe("global_path", 1, pathCallback);
