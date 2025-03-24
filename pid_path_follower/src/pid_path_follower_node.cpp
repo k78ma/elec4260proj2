@@ -98,10 +98,7 @@ void odomCallback(const nav_msgs::Odometry::ConstPtr &odom_msg)
     }
 
     // 4. get the error
-    // Calculate distance error (cross-track error)
     double dist_error = dist_to_waypoint;
-    
-    // Calculate heading error
     double target_heading = std::atan2(ty - ry, tx - rx);
     double heading_error = normalizeAngle(target_heading - ryaw);
 
@@ -129,42 +126,31 @@ void odomCallback(const nav_msgs::Odometry::ConstPtr &odom_msg)
 // TODO: PID distance control
 double pidComputeDist(double error)
 {
-    // Proportional term
     double p_term = kp_dist_ * error;
-    
-    // Integral term
     integrated_dist_error_ += error;
+
     double i_term = ki_dist_ * integrated_dist_error_;
-    
-    // Derivative term
+
     double derivative = error - last_dist_error_;
     double d_term = kd_dist_ * derivative;
-    
-    // Update last error
     last_dist_error_ = error;
     
-    // Return PID output
     return p_term + i_term + d_term;
 }
 
 // TODO: PID Heading control
 double pidComputeHeading(double error)
 {
-    // Proportional term
     double p_term = kp_heading_ * error;
     
-    // Integral term
     integrated_heading_error_ += error;
     double i_term = ki_heading_ * integrated_heading_error_;
     
-    // Derivative term
     double derivative = error - last_heading_error_;
     double d_term = kd_heading_ * derivative;
     
-    // Update last error
     last_heading_error_ = error;
     
-    // Return PID output
     return p_term + i_term + d_term;
 }
 

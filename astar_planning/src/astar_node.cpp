@@ -228,31 +228,26 @@ void inflateObstacles()
     // Copy the original map data
     g_map_data = std::vector<int>(g_current_map.data.begin(), g_current_map.data.end());
 
-    // 1. First pass: Copy unknown regions and mark known free space
+    // Iterate through occupancy grid
     for (int y = 0; y < g_height; ++y) {
         for (int x = 0; x < g_width; ++x) {
             int idx = y * g_width + x;
-            
-            // Copy the cell's status (free, occupied, or unknown)
             if (g_map_data[idx] < 0) {
-                // Unknown space (-1)
                 inflated_map[idx] = -1;
             } else if (g_map_data[idx] < 50) {
-                // Known free space (0-49)
                 inflated_map[idx] = 0;
             } else {
-                // Obstacle (50-100)
                 inflated_map[idx] = 100;
             }
-        }
+        }å
     }
     
-    // 2. Second pass: Inflate obstacles
+    // Expand obstacles using a square region
     for (int y = 0; y < g_height; ++y) {
         for (int x = 0; x < g_width; ++x) {
             int idx = y * g_width + x;
             
-            // Only inflate known obstacles
+            // only inflate known obstacles
             if (g_map_data[idx] > 50) {
                 for (int dy = -inflate_cells; dy <= inflate_cells; ++dy) {
                     for (int dx = -inflate_cells; dx <= inflate_cells; ++dx) {
@@ -262,9 +257,9 @@ void inflateObstacles()
                         if (nx >= 0 && nx < g_width && ny >= 0 && ny < g_height) {
                             int nidx = ny * g_width + nx;
                             
-                            // Only overwrite known free space (not unknown space)
+                            // only overwrite known free space
                             if (inflated_map[nidx] >= 0) {
-                                inflated_map[nidx] = 100; // Mark as obstacle
+                                inflated_map[nidx] = 100;
                             }
                         }
                     }
@@ -356,14 +351,14 @@ bool aStarSearch(int start_x, int start_y, int goal_x, int goal_y, std::vector<s
         int current_idx = open.top().second;
         open.pop();
         
-        // If we've reached the goal, build the path and return
+        // if we've reached the goal, build the path and return
         if (current_idx == goal_idx)
         {
             buildPath(came_from, goal_idx, path);
             return true;
         }
         
-        // Mark the current node as closed
+        // mark the current node as closed
         if (closed[current_idx]) continue;
         closed[current_idx] = true;
 
@@ -377,21 +372,21 @@ bool aStarSearch(int start_x, int start_y, int goal_x, int goal_y, std::vector<s
             int nx = current_x + dx[i];
             int ny = current_y + dy[i];
             
-            // Check if the neighbor is within the map bounds
+            // check if the neighbor is within the map bounds
             if (nx < 0 || nx >= g_width || ny < 0 || ny >= g_height)
                 continue;
                 
             int neighbor_idx = toIndex(nx, ny);
             
-            // Skip if the neighbor is in the closed list or is an obstacle
+            // skip if the neighbor is in the closed list or is an obstacle
             if (closed[neighbor_idx] || g_map_data[neighbor_idx] > 50)
                 continue;
                 
-            // Calculate the cost to reach the neighbor through the current node
+            // calculate the cost to reach the neighbor through the current node
             double movement_cost = (i % 2 == 0) ? 1.0 : 1.414; // Diagonal movement costs more
             double tentative_g_cost = g_cost[current_idx] + movement_cost;
             
-            // If this path to the neighbor is better than any previous one, update it
+            // if this path to the neighbor is better than any previous one, update it
             if (tentative_g_cost < g_cost[neighbor_idx])
             {
                 came_from[neighbor_idx] = current_idx;

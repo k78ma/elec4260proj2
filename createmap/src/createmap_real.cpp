@@ -117,7 +117,6 @@ bool isNearObstacles(int x, int y, int radius) {
     return obstacle_count >= OBSTACLE_CONFIDENCE_THRESHOLD;
 }
 
-// Modify isSuspiciousRay to be less aggressive
 bool isSuspiciousRay(const sensor_msgs::LaserScan::ConstPtr& scan, size_t index) {
     // If we're at the edges of the scan, don't consider it suspicious
     if (index <= 2 || index >= scan->ranges.size() - 3) {
@@ -126,7 +125,6 @@ bool isSuspiciousRay(const sensor_msgs::LaserScan::ConstPtr& scan, size_t index)
     
     double range = scan->ranges[index];
     
-    // Check a wider window (two neighbors on each side)
     double prev_range2 = scan->ranges[index-2];
     double prev_range = scan->ranges[index-1];
     double next_range = scan->ranges[index+1];
@@ -138,11 +136,11 @@ bool isSuspiciousRay(const sensor_msgs::LaserScan::ConstPtr& scan, size_t index)
         return false;
     }
     
-    // Only consider a ray suspicious if it's significantly different from multiple neighbors
+    // only consider a ray suspicious if it's significantly different from multiple neighbors
     double avg_neighbor_range = (prev_range + next_range + prev_range2 + next_range2) / 4.0;
     double range_diff = std::abs(range - avg_neighbor_range);
     
-    // Only filter rays that are significantly longer than neighbors (passing through gaps)
+    // only filter rays that are significantly longer than neighbors (passing through gaps)
     return (range > avg_neighbor_range * 2.0 && range_diff > 0.8);
 }
 
@@ -186,7 +184,7 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
                 continue;
             }
             
-            // Skip suspicious rays (rays with sharp angles compared to neighbors)
+            // skip suspicious rays
             if (isSuspiciousRay(scan, i)) {
                 continue;
             }
@@ -267,7 +265,6 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
     }
 }
 
-// Modify thickenWalls to be less aggressive
 void thickenWalls(std::vector<std::vector<bool>>& obstacles, int thickness = 1) {
     // For thinner walls, use smaller thickness
     thickness = std::max(1, thickness);

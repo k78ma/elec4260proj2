@@ -187,10 +187,10 @@ void buildInflatedObstacles()
         {
             int idx = y * w + x;
             
-            // If this cell is an obstacle (occupied)
+            // ff this cell is an obstacle (occupied)
             if (map_data_.map.data[idx] > 50)
             {
-                // Mark the cell itself as an obstacle
+                // mark the cell itself as an obstacle
                 map_data_.inflated_map[idx] = 100;
                 
                 // 2. Expand obstacles using a square region
@@ -201,11 +201,11 @@ void buildInflatedObstacles()
                         int nx = x + dx;
                         int ny = y + dy;
                         
-                        // Check if the neighboring cell is within map bounds
+                        // check if the neighboring cell is within map bounds
                         if (nx >= 0 && nx < w && ny >= 0 && ny < h)
                         {
                             int nidx = ny * w + nx;
-                            map_data_.inflated_map[nidx] = 100; // Mark as obstacle
+                            map_data_.inflated_map[nidx] = 100; // mark as obstacle
                         }
                     }
                 }
@@ -286,18 +286,18 @@ void detectFrontiers(const std::vector<bool> &reachable, std::vector<std::pair<i
         {
             int idx = indexOf(x, y);
             
-            // Skip if cell is not reachable or is an obstacle
+            // skip if cell is not reachable or is an obstacle
             if (!reachable[idx] || inflated_map[idx] > 0)
                 continue;
                 
-            // Skip if cell is unknown
+            // skip if cell is unknown
             if (grid[idx] < 0)
                 continue;
                 
-            // Check if there are unknown areas in the neighboring regions
+            // check if there are unknown areas in the neighboring regions
             bool is_frontier = false;
             
-            // Check 8-connected neighbors
+            // check 8-connected neighbors
             static const int dx[8] = {1, 1, 0, -1, -1, -1, 0, 1};
             static const int dy[8] = {0, 1, 1, 1, 0, -1, -1, -1};
             
@@ -306,13 +306,13 @@ void detectFrontiers(const std::vector<bool> &reachable, std::vector<std::pair<i
                 int nx = x + dx[i];
                 int ny = y + dy[i];
                 
-                // Check if neighbor is within map bounds
+                // check if neighbor is within map bounds
                 if (nx < 0 || nx >= w || ny < 0 || ny >= h)
                     continue;
                     
                 int nidx = indexOf(nx, ny);
                 
-                // If neighbor is unknown, this cell is a frontier
+                // if neighbor is unknown, this cell is a frontier
                 if (grid[nidx] < 0)
                 {
                     is_frontier = true;
@@ -363,39 +363,39 @@ void clusterFrontiers(const std::vector<std::pair<int, int>> &frontier_cells, st
         int y = f.second;
         int idx = toIndex(x, y);
         
-        // Skip if already clustered
+        // skip if already clustered
         if (clustered[idx])
             continue;
             
-        // Create a new cluster
+        // create a new cluster
         std::vector<std::pair<int, int>> current_cluster;
         
-        // Create a queue, add the current frontier point to the queue, and mark it as clustered
+        // create a queue, add the current frontier point to the queue, and mark it as clustered
         std::queue<std::pair<int, int>> Q;
         Q.push(f);
         clustered[idx] = true;
         
-        // BFS to find connected frontier points
+        // bfs to find connected frontier points
         while (!Q.empty())
         {
-            // Remove a point from the queue and add it to the current cluster
+            // remove a point from the queue and add it to the current cluster
             auto current = Q.front();
             Q.pop();
             current_cluster.push_back(current);
             
-            // Check neighbors
+            // check neighbors
             for (int i = 0; i < 8; i++)
             {
                 int nx = current.first + NX[i];
                 int ny = current.second + NY[i];
                 
-                // Check if neighbor is within map bounds
+                // check if neighbor is within map bounds
                 if (nx < 0 || nx >= w || ny < 0 || ny >= h)
                     continue;
                     
                 int nidx = toIndex(nx, ny);
                 
-                // If a neighbor is an unclustered frontier point and is reachable, add it to the queue
+                // if a neighbor is an unclustered frontier point and is reachable, add it to the queue
                 if (visited[nidx] && !clustered[nidx])
                 {
                     clustered[nidx] = true;
@@ -404,7 +404,7 @@ void clusterFrontiers(const std::vector<std::pair<int, int>> &frontier_cells, st
             }
         }
         
-        // Add the cluster if it's not empty
+        // add the cluster if it's not empty
         if (!current_cluster.empty())
         {
             clusters.push_back(current_cluster);
