@@ -14,8 +14,10 @@
 const double GRID_RESOLUTION = 0.02;
 const int MAP_SIZE_X = 400;
 const int MAP_SIZE_Y = 400;
-const int SCAN_THRESHOLD = 5;
-const int DECAY_FACTOR = 1;
+const int SCAN_THRESHOLD = 8;
+const int DECAY_FACTOR = 0;
+const double SUSPICIOUS_ANGLE_THRESHOLD = 85.0 * M_PI / 180.0;  // Increased to 85 degrees (less strict)
+const int OBSTACLE_CONFIDENCE_THRESHOLD = 2;  // Increased to require more obstacles nearby
 
 // Record the number of times the grid is scanned by the laser
 std::vector<std::vector<int>> scan_count(MAP_SIZE_X, std::vector<int>(MAP_SIZE_Y, 0));
@@ -90,6 +92,60 @@ std::pair<int, int> worldToGrid(double x, double y)
     return {gx, gy};
 }
 
+// Modify isNearObstacles to be more selective
+bool isNearObstacles(int x, int y, int radius) {
+    // Only check along the line of sight, not in all directions
+    int obstacle_count = 0;
+    
+    // Check along horizontal and vertical lines (more efficient and less aggressive)
+    for (int i = -radius; i <= radius; ++i) {
+        // Check horizontal line
+        if (x+i >= 0 && x+i < MAP_SIZE_X && y >= 0 && y < MAP_SIZE_Y) {
+            if (confirmed_obstacles[x+i][y]) {
+                obstacle_count++;
+            }
+        }
+        
+        // Check vertical line
+        if (x >= 0 && x < MAP_SIZE_X && y+i >= 0 && y+i < MAP_SIZE_Y) {
+            if (confirmed_obstacles[x][y+i]) {
+                obstacle_count++;
+            }
+        }
+    }
+    
+    return obstacle_count >= OBSTACLE_CONFIDENCE_THRESHOLD;
+}
+
+// Modify isSuspiciousRay to be less aggressive
+bool isSuspiciousRay(const sensor_msgs::LaserScan::ConstPtr& scan, size_t index) {
+    // If we're at the edges of the scan, don't consider it suspicious
+    if (index <= 2 || index >= scan->ranges.size() - 3) {
+        return false;
+    }
+    
+    double range = scan->ranges[index];
+    
+    // Check a wider window (two neighbors on each side)
+    double prev_range2 = scan->ranges[index-2];
+    double prev_range = scan->ranges[index-1];
+    double next_range = scan->ranges[index+1];
+    double next_range2 = scan->ranges[index+2];
+    
+    // If all neighbors are invalid, can't make a good judgment
+    if (std::isnan(prev_range) || std::isnan(next_range) || 
+        std::isnan(prev_range2) || std::isnan(next_range2)) {
+        return false;
+    }
+    
+    // Only consider a ray suspicious if it's significantly different from multiple neighbors
+    double avg_neighbor_range = (prev_range + next_range + prev_range2 + next_range2) / 4.0;
+    double range_diff = std::abs(range - avg_neighbor_range);
+    
+    // Only filter rays that are significantly longer than neighbors (passing through gaps)
+    return (range > avg_neighbor_range * 2.0 && range_diff > 0.8);
+}
+
 void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan) 
 {
     ros::Time scan_time = scan->header.stamp;
@@ -129,6 +185,11 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
             {
                 continue;
             }
+            
+            // Skip suspicious rays (rays with sharp angles compared to neighbors)
+            if (isSuspiciousRay(scan, i)) {
+                continue;
+            }
 
             //map coordinates
             // Calculate laser endpoint in laser frame
@@ -156,9 +217,30 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
             // Get all points along the laser beam
             auto line_points = bresenhamLine(start_x, start_y, end_x, end_y);
 
-            // For loop to check the status of grid
-            // scan_count, confirmed_obstacles, visited
+            // Check if ray passes through any confirmed obstacle
+            bool ray_passes_through_obstacle = false;
+            for (size_t j = 0; j < line_points.size() - 1; ++j) {
+                auto [x, y] = line_points[j];
+                
+                // Calculate distance from start point (robot position)
+                int dx = x - start_x;
+                int dy = y - start_y;
+                double dist_from_start = std::sqrt(dx*dx + dy*dy);
+                
+                // Only apply near-obstacle check if not too close to robot
+                if (confirmed_obstacles[x][y] || 
+                    (dist_from_start > 20 && isNearObstacles(x, y, 1))) {
+                    ray_passes_through_obstacle = true;
+                    break;
+                }
+            }
 
+            // Skip this ray if it passes through a confirmed obstacle
+            if (ray_passes_through_obstacle) {
+                continue;
+            }
+
+            // Process valid rays as before
             for (size_t j = 0; j < line_points.size(); ++j) {
                 auto [x, y] = line_points[j];
                 
@@ -185,11 +267,49 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
     }
 }
 
-// TODO: map -> odom
+// Modify thickenWalls to be less aggressive
+void thickenWalls(std::vector<std::vector<bool>>& obstacles, int thickness = 1) {
+    // For thinner walls, use smaller thickness
+    thickness = std::max(1, thickness);
+    
+    std::vector<std::vector<bool>> temp = obstacles;
+    
+    for (int x = 0; x < MAP_SIZE_X; ++x) {
+        for (int y = 0; y < MAP_SIZE_Y; ++y) {
+            if (obstacles[x][y]) {
+                // Use a smaller thickening radius
+                for (int dx = -thickness; dx <= thickness; ++dx) {
+                    for (int dy = -thickness; dy <= thickness; ++dy) {
+                        // Apply thickening only if it's close to the obstacle
+                        if (dx*dx + dy*dy <= thickness*thickness) {
+                            int nx = x + dx;
+                            int ny = y + dy;
+                            if (nx >= 0 && nx < MAP_SIZE_X && ny >= 0 && ny < MAP_SIZE_Y) {
+                                temp[nx][ny] = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    obstacles = temp;
+}
+
 void publishMap(const ros::TimerEvent& event) 
 {
     ros::Time current_time = ros::Time::now();
     broadcastMapFrame(current_time);
+
+    // Create temporary copy of confirmed_obstacles for wall thickening
+    auto thickened_obstacles = confirmed_obstacles;
+    
+    // Apply wall thickening to close small gaps (adjust thickness as needed)
+    int wall_thickness = 1;
+    ros::NodeHandle nh;
+    nh.param<int>("wall_thickness", wall_thickness, 1);
+    thickenWalls(thickened_obstacles, wall_thickness);
 
     // Create and fill the occupancy grid message
     nav_msgs::OccupancyGrid map;
@@ -204,14 +324,14 @@ void publishMap(const ros::TimerEvent& event)
     map.info.origin.position.z = 0.0;
     map.info.origin.orientation.w = 1.0;
 
-    // Fill the map data
+    // Fill the map data using thickened obstacles
     map.data.resize(MAP_SIZE_X * MAP_SIZE_Y);
     for (int y = 0; y < MAP_SIZE_Y; ++y) {
         for (int x = 0; x < MAP_SIZE_X; ++x) {
             int index = x + y * MAP_SIZE_X;
             if (!visited[x][y]) {
                 map.data[index] = -1;  // Unknown
-            } else if (confirmed_obstacles[x][y]) {
+            } else if (thickened_obstacles[x][y]) {
                 map.data[index] = 100;  // Occupied
             } else {
                 map.data[index] = 0;    // Free
@@ -244,3 +364,4 @@ int main(int argc, char** argv)
     ros::spin();
     return 0;
 }
+

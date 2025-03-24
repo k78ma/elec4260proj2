@@ -209,3 +209,6 @@ include_directories(
 
 add_executable(createmap_node src/createmap.cpp)
 target_link_libraries(createmap_node ${catkin_LIBRARIES})
+
+add_executable(real_createmap_node src/createmap_real.cpp)
+target_link_libraries(real_createmap_node ${catkin_LIBRARIES})
