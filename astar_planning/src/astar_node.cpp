@@ -20,6 +20,7 @@ std::vector<int> g_map_data;
 double g_robot_radius = 0.22;
 ros::Publisher g_path_pub;
 ros::Publisher g_raw_path_pub;
+ros::Publisher g_inflated_map_pub;
 
 // Bezier interpolation function
 /*
@@ -220,48 +221,73 @@ void inflateObstacles()
 {
     // Determine the inflation radius in grid cells
     const int inflate_cells = static_cast<int>(std::ceil(g_robot_radius / g_resolution));
-    std::vector<int> inflated_map(g_width * g_height, 0);
+    
+    // Initialize inflated_map with -1 (unknown) for all cells
+    std::vector<int> inflated_map(g_width * g_height, -1);
     
     // Copy the original map data
     g_map_data = std::vector<int>(g_current_map.data.begin(), g_current_map.data.end());
 
-    // 1. Iterate through the occupancy grid
-    for (int y = 0; y < g_height; ++y)
-    {
-        for (int x = 0; x < g_width; ++x)
-        {
+    // 1. First pass: Copy unknown regions and mark known free space
+    for (int y = 0; y < g_height; ++y) {
+        for (int x = 0; x < g_width; ++x) {
             int idx = y * g_width + x;
             
-            // Check if this cell is an obstacle (value > 50 in occupancy grid)
-            if (g_map_data[idx] > 50)
-            {
-                // 2. Expand obstacles using a square region
-                for (int dy = -inflate_cells; dy <= inflate_cells; ++dy)
-                {
-                    for (int dx = -inflate_cells; dx <= inflate_cells; ++dx)
-                    {
+            // Copy the cell's status (free, occupied, or unknown)
+            if (g_map_data[idx] < 0) {
+                // Unknown space (-1)
+                inflated_map[idx] = -1;
+            } else if (g_map_data[idx] < 50) {
+                // Known free space (0-49)
+                inflated_map[idx] = 0;
+            } else {
+                // Obstacle (50-100)
+                inflated_map[idx] = 100;
+            }
+        }
+    }
+    
+    // 2. Second pass: Inflate obstacles
+    for (int y = 0; y < g_height; ++y) {
+        for (int x = 0; x < g_width; ++x) {
+            int idx = y * g_width + x;
+            
+            // Only inflate known obstacles
+            if (g_map_data[idx] > 50) {
+                for (int dy = -inflate_cells; dy <= inflate_cells; ++dy) {
+                    for (int dx = -inflate_cells; dx <= inflate_cells; ++dx) {
                         int nx = x + dx;
                         int ny = y + dy;
                         
-                        // Check if the new position is within the map bounds
-                        if (nx >= 0 && nx < g_width && ny >= 0 && ny < g_height)
-                        {
+                        if (nx >= 0 && nx < g_width && ny >= 0 && ny < g_height) {
                             int nidx = ny * g_width + nx;
-                            inflated_map[nidx] = 100; // Mark as obstacle
+                            
+                            // Only overwrite known free space (not unknown space)
+                            if (inflated_map[nidx] >= 0) {
+                                inflated_map[nidx] = 100; // Mark as obstacle
+                            }
                         }
                     }
                 }
-            }
-            else if (g_map_data[idx] >= 0)
-            {
-                // Copy known free space
-                inflated_map[idx] = std::max(inflated_map[idx], g_map_data[idx]);
             }
         }
     }
     
     // Update the global map with the inflated obstacles
     g_map_data = inflated_map;
+    
+    // Publish the inflated map for visualization
+    nav_msgs::OccupancyGrid inflated_grid;
+    inflated_grid.header = g_current_map.header;
+    inflated_grid.info = g_current_map.info;
+    
+    // Convert from int to int8_t for ROS message
+    inflated_grid.data.resize(g_map_data.size());
+    for (size_t i = 0; i < g_map_data.size(); ++i) {
+        inflated_grid.data[i] = static_cast<int8_t>(g_map_data[i]);
+    }
+    
+    g_inflated_map_pub.publish(inflated_grid);
 }
 
 
@@ -473,6 +499,7 @@ int main(int argc, char** argv)
     ros::Subscriber goal_sub = nh.subscribe("move_base_simple/goal", 1, goalCallback);
     g_path_pub = nh.advertise<nav_msgs::Path>("global_path", 1);
     g_raw_path_pub = nh.advertise<nav_msgs::Path>("raw_path", 1);
+    g_inflated_map_pub = nh.advertise<nav_msgs::OccupancyGrid>("inflated_map", 1);
 
     ros::spin();
     return 0;
