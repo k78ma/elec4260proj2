@@ -92,21 +92,19 @@ std::pair<int, int> worldToGrid(double x, double y)
     return {gx, gy};
 }
 
-// Modify isNearObstacles to be more selective
 bool isNearObstacles(int x, int y, int radius) {
-    // Only check along the line of sight, not in all directions
+    // only check along the line of sight, not in all directions
     int obstacle_count = 0;
     
-    // Check along horizontal and vertical lines (more efficient and less aggressive)
     for (int i = -radius; i <= radius; ++i) {
-        // Check horizontal line
+        // check horizontal line
         if (x+i >= 0 && x+i < MAP_SIZE_X && y >= 0 && y < MAP_SIZE_Y) {
             if (confirmed_obstacles[x+i][y]) {
                 obstacle_count++;
             }
         }
         
-        // Check vertical line
+        // check vertical line
         if (x >= 0 && x < MAP_SIZE_X && y+i >= 0 && y+i < MAP_SIZE_Y) {
             if (confirmed_obstacles[x][y+i]) {
                 obstacle_count++;
@@ -118,7 +116,7 @@ bool isNearObstacles(int x, int y, int radius) {
 }
 
 bool isSuspiciousRay(const sensor_msgs::LaserScan::ConstPtr& scan, size_t index) {
-    // If we're at the edges of the scan, don't consider it suspicious
+    // if we're at the edges of the scan, don't consider it suspicious
     if (index <= 2 || index >= scan->ranges.size() - 3) {
         return false;
     }
@@ -130,7 +128,7 @@ bool isSuspiciousRay(const sensor_msgs::LaserScan::ConstPtr& scan, size_t index)
     double next_range = scan->ranges[index+1];
     double next_range2 = scan->ranges[index+2];
     
-    // If all neighbors are invalid, can't make a good judgment
+    // if all neighbors are invalid, can't make a good judgment
     if (std::isnan(prev_range) || std::isnan(next_range) || 
         std::isnan(prev_range2) || std::isnan(next_range2)) {
         return false;
@@ -266,7 +264,6 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 }
 
 void thickenWalls(std::vector<std::vector<bool>>& obstacles, int thickness = 1) {
-    // For thinner walls, use smaller thickness
     thickness = std::max(1, thickness);
     
     std::vector<std::vector<bool>> temp = obstacles;
@@ -274,10 +271,8 @@ void thickenWalls(std::vector<std::vector<bool>>& obstacles, int thickness = 1) 
     for (int x = 0; x < MAP_SIZE_X; ++x) {
         for (int y = 0; y < MAP_SIZE_Y; ++y) {
             if (obstacles[x][y]) {
-                // Use a smaller thickening radius
                 for (int dx = -thickness; dx <= thickness; ++dx) {
                     for (int dy = -thickness; dy <= thickness; ++dy) {
-                        // Apply thickening only if it's close to the obstacle
                         if (dx*dx + dy*dy <= thickness*thickness) {
                             int nx = x + dx;
                             int ny = y + dy;
