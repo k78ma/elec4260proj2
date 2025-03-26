@@ -221,8 +221,6 @@ void inflateObstacles()
 {
     // Determine the inflation radius in grid cells
     const int inflate_cells = static_cast<int>(std::ceil(g_robot_radius / g_resolution));
-    
-    // Initialize inflated_map with -1 (unknown) for all cells
     std::vector<int> inflated_map(g_width * g_height, -1);
     
     // Copy the original map data
@@ -239,7 +237,7 @@ void inflateObstacles()
             } else {
                 inflated_map[idx] = 100;
             }
-        }å
+        }
     }
     
     // Expand obstacles using a square region
@@ -362,7 +360,7 @@ bool aStarSearch(int start_x, int start_y, int goal_x, int goal_y, std::vector<s
         if (closed[current_idx]) continue;
         closed[current_idx] = true;
 
-        // Get the coordinates (x, y) of the current node from the 1D index
+        // get the coordinates (x, y) of the current node from the 1D index
         int current_x = current_idx % g_width;
         int current_y = current_idx / g_width;
 
@@ -383,7 +381,7 @@ bool aStarSearch(int start_x, int start_y, int goal_x, int goal_y, std::vector<s
                 continue;
                 
             // calculate the cost to reach the neighbor through the current node
-            double movement_cost = (i % 2 == 0) ? 1.0 : 1.414; // Diagonal movement costs more
+            double movement_cost = (i % 2 == 0) ? 1.0 : 1.414; // diagonal movement costs more
             double tentative_g_cost = g_cost[current_idx] + movement_cost;
             
             // if this path to the neighbor is better than any previous one, update it
@@ -393,7 +391,7 @@ bool aStarSearch(int start_x, int start_y, int goal_x, int goal_y, std::vector<s
                 g_cost[neighbor_idx] = tentative_g_cost;
                 f_cost[neighbor_idx] = tentative_g_cost + heuristic(nx, ny);
                 
-                // Add the neighbor to the open list
+                // add the neighbor to the open list
                 open.emplace(f_cost[neighbor_idx], neighbor_idx);
             }
         }

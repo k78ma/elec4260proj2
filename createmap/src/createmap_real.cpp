@@ -16,8 +16,7 @@ const int MAP_SIZE_X = 400;
 const int MAP_SIZE_Y = 400;
 const int SCAN_THRESHOLD = 8;
 const int DECAY_FACTOR = 0;
-const double SUSPICIOUS_ANGLE_THRESHOLD = 85.0 * M_PI / 180.0;  // Increased to 85 degrees (less strict)
-const int OBSTACLE_CONFIDENCE_THRESHOLD = 2;  // Increased to require more obstacles nearby
+const int OBSTACLE_CONFIDENCE_THRESHOLD = 2; 
 
 // Record the number of times the grid is scanned by the laser
 std::vector<std::vector<int>> scan_count(MAP_SIZE_X, std::vector<int>(MAP_SIZE_Y, 0));
